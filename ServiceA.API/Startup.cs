@@ -69,7 +69,7 @@ namespace ServiceA.API
             services.AddHttpClient<ProductService>(opt =>
             {
                 opt.BaseAddress = new Uri("https://localhost:5003/api/products/");
-            });
+            }).AddPolicyHandler(GetRetryPolicy());
         }
 
         private IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
@@ -80,7 +80,7 @@ namespace ServiceA.API
             {
                 Debug.WriteLine($"Retry Count: {retryAtempt}");
                 return TimeSpan.FromSeconds(10);
-            }, onRetryAsync: OnRetryAsync);
+            }, onRetryAsync : OnRetryAsync);
         }
 
         private Task OnRetryAsync(DelegateResult<HttpResponseMessage> arg1, TimeSpan arg2)
