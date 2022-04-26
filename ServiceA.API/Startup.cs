@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -11,6 +14,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
+using Polly;
+using Polly.Extensions.Http;
 
 namespace ServiceA.API
 {
@@ -64,7 +69,24 @@ namespace ServiceA.API
             services.AddHttpClient<ProductService>(opt =>
             {
                 opt.BaseAddress = new Uri("https://localhost:5003/api/products/");
-            }); 
+            });
+        }
+
+        private IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+        {
+            //StatusCode NotFound ise 5 kez bu isteği tekrarla, tekrarlar arasında 10 saniye bekle:
+            return HttpPolicyExtensions.HandleTransientHttpError().OrResult(msg => msg.StatusCode == HttpStatusCode.NotFound)
+            .WaitAndRetryAsync(5, retryAtempt =>
+            {
+                Debug.WriteLine($"Retry Count: {retryAtempt}");
+                return TimeSpan.FromSeconds(10);
+            }, onRetryAsync: OnRetryAsync);
+        }
+
+        private Task OnRetryAsync(DelegateResult<HttpResponseMessage> arg1, TimeSpan arg2)
+        {
+            Debug.WriteLine($"Request made again: {arg2.TotalMilliseconds }");
+            return Task.CompletedTask;
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
