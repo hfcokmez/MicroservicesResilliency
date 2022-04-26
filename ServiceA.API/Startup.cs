@@ -69,7 +69,16 @@ namespace ServiceA.API
             services.AddHttpClient<ProductService>(opt =>
             {
                 opt.BaseAddress = new Uri("https://localhost:5003/api/products/");
-            });
+            }).AddPolicyHandler(GetRetryPolicy());
+        }
+
+        /*Basic level Circuit Breaker, devre Closed durumunda iken timer tutmaz. Ard arda gönderilen 3 request başarısız sonuçlanırsa 
+        devrenin durumu Open'a alınır. Devre Open durumunda 10 saniye bekler ve ardından Half-Open durumuna geçer. Sonrasında gelen
+        request eğer başarısız olursa Open'a döner bir 10 saniye daha bekler, başarılı olursa Closed durumuna geçer.
+        */
+        private IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
+        {
+            return HttpPolicyExtensions.HandleTransientHttpError().CircuitBreakerAsync(3, TimeSpan.FromSeconds(10));
         }
 
         private IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
