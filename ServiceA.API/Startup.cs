@@ -69,16 +69,41 @@ namespace ServiceA.API
             services.AddHttpClient<ProductService>(opt =>
             {
                 opt.BaseAddress = new Uri("https://localhost:5003/api/products/");
-            }).AddPolicyHandler(GetRetryPolicy());
+            }).AddPolicyHandler(GetAdvanceCircuitBreakerPolicy());
         }
 
-        /*Basic level Circuit Breaker, devre Closed durumunda iken timer tutmaz. Ard arda gönderilen 3 request başarısız sonuçlanırsa 
-        devrenin durumu Open'a alınır. Devre Open durumunda 10 saniye bekler ve ardından Half-Open durumuna geçer. Sonrasında gelen
-        request eğer başarısız olursa Open'a döner bir 10 saniye daha bekler, başarılı olursa Closed durumuna geçer.
-        */
         private IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
         {
-            return HttpPolicyExtensions.HandleTransientHttpError().CircuitBreakerAsync(3, TimeSpan.FromSeconds(10));
+            return HttpPolicyExtensions.HandleTransientHttpError().CircuitBreakerAsync(3, TimeSpan.FromSeconds(10),
+            onBreak: (arg1, arg2) =>
+            {
+                Debug.WriteLine("Circuit Breaker => On Break");
+            },
+            onReset: () =>
+            {
+                Debug.WriteLine("Circuit Breaker => On Reset");
+            },
+            onHalfOpen: () =>
+            {
+                Debug.WriteLine("Circuit Breaker => On Half Open");
+            });
+        }
+
+        private IAsyncPolicy<HttpResponseMessage> GetAdvanceCircuitBreakerPolicy()
+        {
+            return HttpPolicyExtensions.HandleTransientHttpError().AdvancedCircuitBreakerAsync (0.5, TimeSpan.FromSeconds(30), 10, TimeSpan.FromSeconds(50),
+            onBreak: (arg1, arg2) =>
+            {
+                Debug.WriteLine("Circuit Breaker => On Break");
+            },
+            onReset: () =>
+            {
+                Debug.WriteLine("Circuit Breaker => On Reset");
+            },
+            onHalfOpen: () =>
+            {
+                Debug.WriteLine("Circuit Breaker => On Half Open");
+            }); 
         }
 
         private IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
@@ -121,3 +146,28 @@ namespace ServiceA.API
         }
     }
 }
+
+
+/*Basic level Circuit Breaker, devre Closed durumunda iken timer tutmaz. Ard arda gönderilen 3 request başarısız sonuçlanırsa 
+devrenin durumu Open'a alınır. Devre Open durumunda 10 saniye bekler ve ardından Half-Open durumuna geçer. Sonrasında gelen
+request eğer başarısız olursa Open'a döner bir 10 saniye daha bekler, başarılı olursa Closed durumuna geçer.
+
+!!!onBreak, onReset, onHalfOpen ile devrenin durumları arasındaki geçişte business kodu çalıştırılabilir.
+
+-BASIC CIRCUIT PATTERN İLE YAPILAN RUN'DA:
+Down olan Service B'ye 10 saniye içinde 3 request yapıldığında yapılan her request için HttpRequestException döner. 3. requestten sonra 
+Service B'ye bile ulaşmadan BrokenCircuitException fırlatılarak 10 saniye bekler, bu 10 saniye içinde yapılan tüm istekler BrokenCircuitException
+fırlatır( o 10 saniyelik sürede B servisi ayağa kalsa bile bu exception döner). 10 saniye sonunda yapılan istek B servisinden
+HttpRequestException dönerse devre Open'a geçip bir 10 saniye daha bekler. Eğer başarılı dönerse devre Closed durumuna geçer.
+
+-ADVANCED CIRCUIT PATTERN İLE YAPILAN RUN'DA:
+(0.5, TimeSpan.FromSeconds(30), 5, TimeSpan.FromSeconds(50), onBreak:....)
+Yukarıda geçen parametrelerden TimeSpan.FromSeconds(30) devre Closed durumunda iken sürekli çalışan timer'ı ifade eder. 30 saniyelik süreçte yapılan
+isteklerin 0.5'i yani %50'si başarısız olursa devre Open durumuna geçer. Bu isteklerin yarısı belirli bir threshold'u geçemezse (şuanki durumda
+5 istek şeklinde set edilen parametre) timer tekrar başa sarar ve devre Closed'da kalmaya devam eder. Örneğin 30 saniye içinde 20 istek yapıldı
+ve bu isteklerden 11 tanesi başarısız olursa (%50'yi ve 5 thresholdunu geçti) devre Open'a geçer. Devre Open evresinde iken 50 saniye sayar, bu
+süre içinde gelen tüm istekler B servisine iletilmeden direkt BrokenCircuitException fırlatır. 50 saniyeden sonra Half-Open evresine girer. Bu
+evrede gelen istek B servisine gider oradan başarılı sonuç dönerse devre Closed evresine alınır ve 30 saniyelik ilk timer çalışmaya başlar.
+Başarısız olması durumunda tekrar Open evresine girer ve tekrar 50 saniye saymaya başlar.
+
+ */
